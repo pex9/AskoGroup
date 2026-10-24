@@ -8,5 +8,19 @@
     "prezzo": 19500,
     "descrizione": "Minescavatore Caterpillar 302 CR disponibile a Montanera (CN). Contattaci per dettagli e visione del mezzo.",
     "foto": []
+  },
+  {
+    "stato": "disponibile",
+    "tipo": "vendita",
+    "categoria": "Escavatori",
+    "foto": [
+      "uploads/1792851841208-1.jpg"
+    ],
+    "titolo": "prova",
+    "descrizione": "1111",
+    "anno": 2019,
+    "ore": 1,
+    "prezzo": 11111,
+    "id": "prova-mvmhp3jt"
   }
 ]
