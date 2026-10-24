@@ -1,0 +1,52 @@
+<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Pannello – Asko Group</title><link rel="stylesheet" href="../style.css"></head><body>
+<header class="top"><a class="brand" href="../index.html">ASKO GROUP</a><nav><span id="who"></span><a href="#" id="out" hidden>Esci</a></nav></header>
+<main class="wrap narrow" id="app"></main>
+<script>
+const $=s=>document.querySelector(s),app=$('#app'),LS='asko_admin',P='data/mezzi.json';
+const ST={disponibile:'Disponibile','in-arrivo':'In arrivo',venduto:'Venduto',occasione:'Occasione del mese'};
+const CAT=['Escavatori','Minipale','Trattori','Piattaforme','Muletti','Autocarri','Attrezzature','Altro'];
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const eur=n=>n?Number(n).toLocaleString('it-IT',{minimumFractionDigits:2})+' €':'su richiesta';
+const b64=s=>{let b='';for(const x of new TextEncoder().encode(s))b+=String.fromCharCode(x);return btoa(b)};
+const unb64=s=>new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\s/g,'')),c=>c.charCodeAt(0)));
+const slug=s=>s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,50)||'mezzo';
+let mode,cfg,items=[];
+const local={async read(p){const r=await fetch('/api/read?path='+p);return r.ok?{text:await r.text()}:null},
+ async write(p,b){const r=await fetch('/api/write',{method:'POST',body:JSON.stringify({path:p,b64:b})});if(!r.ok)throw Error(await r.text())}};
+const gh={sha:{},h(){return{Authorization:'Bearer '+cfg.token,Accept:'application/vnd.github+json'}},u(p){return`https://api.github.com/repos/${cfg.repo}/contents/${p}`},
+ async read(p){const r=await fetch(this.u(p)+'?ref='+cfg.branch,{headers:this.h(),cache:'no-store'});if(r.status==404)return null;if(!r.ok)throw Error('GitHub '+r.status);const j=await r.json();this.sha[p]=j.sha;return{text:unb64(j.content)}},
+ async write(p,b){const body={message:'Admin: '+p,content:b,branch:cfg.branch};if(this.sha[p])body.sha=this.sha[p];
+  const r=await fetch(this.u(p),{method:'PUT',headers:{...this.h(),'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok)throw Error('GitHub '+r.status+' '+(await r.text()).slice(0,150));this.sha[p]=(await r.json()).content.sha}};
+async function shrink(f){const b=await createImageBitmap(f),k=Math.min(1,1600/b.width),c=document.createElement('canvas');c.width=Math.round(b.width*k);c.height=Math.round(b.height*k);c.getContext('2d').drawImage(b,0,0,c.width,c.height);return c.toDataURL('image/jpeg',.82).split(',')[1]}
+const persist=()=>mode.write(P,b64(JSON.stringify(items,null,2)));
+async function init(){
+ try{const r=await fetch('/api/ping');if(r.ok&&await r.text()==='asko-local'){mode=local;$('#who').textContent='Modalità locale';return list()}}catch{}
+ cfg=JSON.parse(localStorage.getItem(LS)||'null');if(!cfg)return login();
+ mode=gh;$('#who').textContent=cfg.repo;$('#out').hidden=false;list()}
+function login(msg=''){
+ app.innerHTML=`<h1>Accesso</h1><p class="err">${esc(msg)}</p><form id="lf"><label>Repository (utente/repo)<input name="repo" required placeholder="utente/nome-repo"></label><label>Branch<input name="branch" value="main" required></label><label>Token GitHub<input name="token" type="password" required></label><button class="btn">Entra e salva</button></form><p class="note">Token: GitHub → Settings → Developer settings → Fine-grained tokens. Solo questo repo, permesso Contents: Read and write. Resta salvato in questo browser.</p>`;
+ $('#lf').onsubmit=async e=>{e.preventDefault();cfg=Object.fromEntries(new FormData(e.target));cfg.repo=cfg.repo.trim();
+  const r=await fetch('https://api.github.com/repos/'+cfg.repo,{headers:gh.h()});
+  if(!r.ok)return login('Accesso non riuscito ('+r.status+'): controlla repo e token.');
+  localStorage.setItem(LS,JSON.stringify(cfg));init()}}
+async function list(note=''){
+ try{const f=await mode.read(P);items=f?JSON.parse(f.text):[]}catch(e){return app.innerHTML='<p class="err">'+esc(e.message)+'</p>'}
+ app.innerHTML=`<h1>Mezzi</h1><p>${esc(note)}</p><p><button class="btn" id="new">Nuovo mezzo</button></p><ul class="lst">${items.map((m,i)=>`<li class="row"><span><b>${esc(m.titolo)}</b> · ${ST[m.stato]} · ${eur(m.prezzo)}</span><span><button data-e="${i}">Modifica</button> <button data-d="${i}">Elimina</button></span></li>`).join('')||'<li>Nessun mezzo.</li>'}</ul>`}
+app.onclick=async e=>{const t=e.target;if(t.id==='new')form();else if(t.dataset.e)form(+t.dataset.e);
+ else if(t.dataset.d&&confirm('Eliminare questo mezzo?')){items.splice(+t.dataset.d,1);try{await persist();list('Mezzo eliminato.')}catch(x){alert(x.message);list()}}};
+$('#out').onclick=e=>{e.preventDefault();localStorage.removeItem(LS);location.reload()};
+function form(i){
+ const m=i==null?{stato:'disponibile',tipo:'vendita',categoria:'Escavatori',foto:[]}:items[i],o=(a,v)=>a.map(x=>`<option${x===v?' selected':''}>${x}</option>`).join('');
+ app.innerHTML=`<h1>${i==null?'Nuovo mezzo':'Modifica mezzo'}</h1><form id="mf"><label>Titolo<input name="titolo" required value="${esc(m.titolo)}"></label><label>Categoria<select name="categoria">${o(CAT,m.categoria)}</select></label><label>Tipo<select name="tipo">${o(['vendita','noleggio'],m.tipo)}</select></label><label>Stato<select name="stato">${Object.keys(ST).map(k=>`<option value="${k}"${k===m.stato?' selected':''}>${ST[k]}</option>`).join('')}</select></label><label>Anno<input name="anno" type="number" value="${esc(m.anno)}"></label><label>Ore<input name="ore" type="number" value="${esc(m.ore)}"></label><label>Prezzo (€)<input name="prezzo" type="number" step="0.01" value="${esc(m.prezzo)}"></label><label>Descrizione<textarea name="descrizione" rows="5">${esc(m.descrizione)}</textarea></label>${m.foto.length?`<fieldset><legend>Foto attuali (spunta per tenere)</legend>${m.foto.map(s=>`<label class="chk"><input type="checkbox" name="keep" value="${esc(s)}" checked><img src="../${esc(s)}" alt="" width="80"></label>`).join('')}</fieldset>`:''}<label>Aggiungi foto<input name="foto" type="file" accept="image/*" multiple></label><p><button class="btn" id="sv">Salva</button> <button type="button" id="bk">Annulla</button></p><p id="st"></p></form>`;
+ $('#bk').onclick=()=>list();
+ $('#mf').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);$('#sv').disabled=true;
+  try{const foto=f.getAll('keep');let n=0;
+   for(const file of f.getAll('foto')){if(!file.size)continue;$('#st').textContent='Carico foto '+(++n)+'…';const p='uploads/'+Date.now()+'-'+n+'.jpg';await mode.write(p,await shrink(file));foto.push(p)}
+   const x={...m,titolo:f.get('titolo').trim(),categoria:f.get('categoria'),tipo:f.get('tipo'),stato:f.get('stato'),descrizione:f.get('descrizione'),foto};
+   for(const k of['anno','ore','prezzo']){const v=f.get(k);if(v!=='')x[k]=+v;else delete x[k]}
+   if(i==null){x.id=slug(x.titolo)+'-'+Date.now().toString(36);items.push(x)}else items[i]=x;
+   $('#st').textContent='Salvo…';await persist();list('Salvato. Online tra 1-2 minuti.')
+  }catch(err){$('#st').textContent='Errore: '+err.message;$('#sv').disabled=false}}}
+init();
+</script></body></html>
